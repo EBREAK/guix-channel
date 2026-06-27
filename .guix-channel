@@ -1,0 +1,5 @@
+;; This file is best viewed as -*- Scheme -*-.
+
+(channel
+  (version 0)
+  (url "https://github.com/ebreak/guix-channel")) ; the primary URL
