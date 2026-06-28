@@ -94,7 +94,7 @@
                 #t))))))
     (native-inputs
      `(("xgcc" ,(cross-gcc %target
-                            #:xgcc gcc-14
+                            #:xgcc gcc-16
                             #:xbinutils (cross-binutils %target)
                             #:libc #f))
        ("xbinutils" ,(cross-binutils %target))
@@ -179,7 +179,7 @@ C library of a bare-metal RISC-V GCC toolchain.")
 
 (define-public gcc-cross-riscv32-qingkev2a
   (let ((base (cross-gcc %target
-                         #:xgcc gcc-14
+                         #:xgcc gcc-16
                          #:xbinutils (cross-binutils %target)
                          #:libc riscv32-qingkev2a-picolibc)))
     (package
