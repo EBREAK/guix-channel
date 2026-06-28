@@ -18,6 +18,7 @@
   libusb linux llvm
   man ncurses networking
   radio rsync rust-apps
+  pkg-config
   terminals texinfo tmux
   uucp
   version-control video virtualization
@@ -52,18 +53,18 @@
   (packages
    (append
     (list
-     ncurses man-db man-pages texinfo tmux
+     ncurses man-db man-pages tmux
      htop bmon strace perf vmtouch
      emacs-next emacs-company emacs-rime emacs-ivy
-     gnu-make cmake meson ninja bear
+     gnu-make cmake meson ninja pkg-config bear
      git fzf ripgrep cscope
-     gcc-toolchain clang-toolchain
+     clang-toolchain
      riscv32-qingkev2a-elf-toolchain riscv32-qingkev3f-elf-toolchain
      riscv32-qingkev4a-elf-toolchain riscv32-qingkev4f-elf-toolchain
      openocd openocd-mrs
      pulseview sigrok-cli sigrok-firmware-fx2lafw
      binwalk file genimage qemu
-     usbutils tcpdump wireshark rtl-sdr rtl-433 dump1090 gqrx
+     usbutils tcpdump wireshark rtl-sdr rtl-433 dump1090
      ffmpeg picocom lrzsz uucp nncp rsync wget curl
      libusb hidapi evtest
      dwl foot wmenu grim ungoogled-chromium
