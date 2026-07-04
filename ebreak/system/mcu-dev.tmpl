@@ -6,7 +6,13 @@
  (ebreak packages riscv32-qingkev2a-toolchain)
  (ebreak packages riscv32-qingkev3f-toolchain)
  (ebreak packages riscv32-qingkev4a-toolchain)
- (ebreak packages riscv32-qingkev4f-toolchain))
+ (ebreak packages riscv32-qingkev4f-toolchain)
+ (ebreak packages sh-casio-elf-toolchain)
+ (ebreak packages gamecube-toolchain)
+ (ebreak packages usb-tools)
+ (ebreak packages ch32-rs)
+ (ebreak packages kermit)
+ )
 (use-service-modules base desktop)
 (use-package-modules
   admin
@@ -61,10 +67,13 @@
      clang-toolchain
      riscv32-qingkev2a-elf-toolchain riscv32-qingkev3f-elf-toolchain
      riscv32-qingkev4a-elf-toolchain riscv32-qingkev4f-elf-toolchain
+     sh-casio-elf-toolchain gamecube-toolchain
      openocd openocd-mrs
      pulseview sigrok-cli sigrok-firmware-fx2lafw
      binwalk file genimage qemu
      usbutils tcpdump wireshark rtl-sdr rtl-433 dump1090
+     usb-sniffer wch-ble-analyzer-capture
+     wchisp wch-link kermit ckermit ekermit
      ffmpeg picocom lrzsz uucp nncp rsync wget curl
      libusb hidapi evtest
      dwl foot wmenu grim ungoogled-chromium
@@ -76,5 +85,9 @@
      (service elogind-service-type)
      (udev-rules-service 'sigrok libsigrok)
      (udev-rules-service 'rtl-sdr rtl-sdr)
+     (udev-rules-service 'usb-sniffer usb-sniffer)
+     (udev-rules-service 'wch-ble-analyzer wch-ble-analyzer-capture)
+     (udev-rules-service 'wch-link wch-link)
+     (udev-rules-service 'wchisp wchisp)
      )
     %base-services)))
