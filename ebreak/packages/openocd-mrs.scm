@@ -21,11 +21,13 @@
   (package
     (name "openocd-mrs")
     (version "V240")
-    ;; NOTE: This URL carries a time-limited signature from the MounRiver API.
-    ;; When it expires, query the API as AUR does:
-    ;;   curl 'http://api.mounriver.com/mountriver/api/version/fetchRecentOpenOcd?osType=LINUX&lang=zh'
-    ;;   curl 'https://api.mounriver.com/mountriver/api/version/getDownloadUrl?resourceId=<softResId>'
-    (source (local-file "MRS_Toolchain_Linux_X64_V240.tar.xz"))
+    (source
+     (origin
+      (method url-fetch)
+      (uri "https://github.com/EBREAK/blob/releases/download/20260707/MRS_Toolchain_Linux_X64_V240.tar.xz")
+      (sha256
+       (base32
+        "0v9az3z44lg3g0m92gp3gxc3y526yw0gvw1dgkqnci724wymkbhz"))))
     (build-system trivial-build-system)
     (arguments
      (list
