@@ -42,8 +42,7 @@
               (let* ((out (assoc-ref outputs "out"))
                      (bin (string-append out "/bin"))
                      (extcap (string-append out "/lib/wireshark/extcap"))
-                     (libexec (string-append out "/libexec/usb-sniffer"))
-                     (rules (string-append out "/lib/udev/rules.d")))
+                     (libexec (string-append out "/libexec/usb-sniffer")))
                 (mkdir-p extcap)
                 (install-file "usb-sniffer" extcap)
                 (mkdir-p bin)
@@ -52,9 +51,18 @@
                 (mkdir-p libexec)
                 (install-file "../bin/usb_sniffer.bin" libexec)
                 (install-file "../bin/usb_sniffer_impl.jed" libexec)
-                (mkdir-p rules)
-                (install-file "../bin/90-usb-sniffer.rules" rules)
-                #t))))))
+                #t)))
+          (add-after 'install 'install-udev-rules
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((rules (string-append (assoc-ref outputs "out")
+                                          "/lib/udev/rules.d")))
+                (mkdir-p rules)   
+                (with-output-to-file (string-append rules "/90-usb-sniffer.rules")
+                  (lambda _
+                    (display
+                     (string-append
+	"SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"04b4\", ATTRS{idProduct}==\"8613\", MODE=\"0660\", GROUP=\"dialout\"\n"
+	"SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"6666\", ATTRS{idProduct}==\"6620\", MODE=\"0660\", GROUP=\"dialout\"\n"))))))))))
     (native-inputs
      (list pkg-config))
     (inputs
@@ -94,13 +102,21 @@ sniffer and outputs pcapng files for analysis in Wireshark.")
           (replace 'install
             (lambda* (#:key outputs #:allow-other-keys)
               (let* ((out (assoc-ref outputs "out"))
-                     (bin (string-append out "/bin"))
-                     (rules (string-append out "/lib/udev/rules.d")))
+                     (bin (string-append out "/bin")))
                 (mkdir-p bin)
-                (mkdir-p rules)
-                (install-file "wch_capture" bin)
-                (install-file "99-wch-ble-analyzer.rules" rules)
-                #t))))))
+                (install-file "wch_capture" (string-append bin "/wch-ble-capture"))
+                #t)))
+          (add-after 'install 'install-udev-rules
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((rules (string-append (assoc-ref outputs "out")
+                                          "/lib/udev/rules.d")))
+                (mkdir-p rules)   
+                (with-output-to-file (string-append rules "/90-wch-ble-sniffer.rules")
+                  (lambda _
+                    (display
+                     (string-append
+	"SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"1a86\", ATTRS{idProduct}==\"8009\", MODE=\"0660\", GROUP=\"dialout\"\n"
+	"SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"1a86\", ATTRS{idProduct}==\"8091\", MODE=\"0660\", GROUP=\"dialout\"\n"))))))))))
     (native-inputs
      (list pkg-config))
     (inputs
