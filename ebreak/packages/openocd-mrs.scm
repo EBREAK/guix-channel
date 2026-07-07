@@ -25,14 +25,7 @@
     ;; When it expires, query the API as AUR does:
     ;;   curl 'http://api.mounriver.com/mountriver/api/version/fetchRecentOpenOcd?osType=LINUX&lang=zh'
     ;;   curl 'https://api.mounriver.com/mountriver/api/version/getDownloadUrl?resourceId=<softResId>'
-    (source
-     (origin
-       (method url-fetch)
-       (uri "https://file-oss.mounriver.com/tools/MRS_Toolchain_Linux_X64_V240.tar.xz?sign=b35840efc22d9d4336f18172f1258674&time=19ef9b97a14&from=113.87.155.159&resId=2030113772066086913")
-       (file-name "MRS_Toolchain_Linux_X64_V240.tar.xz")
-       (sha256
-        (base32
-         "0v9az3z44lg3g0m92gp3gxc3y526yw0gvw1dgkqnci724wymkbhz"))))
+    (source (local-file "MRS_Toolchain_Linux_X64_V240.tar.xz"))
     (build-system trivial-build-system)
     (arguments
      (list
