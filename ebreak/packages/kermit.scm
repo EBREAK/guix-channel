@@ -14,17 +14,17 @@
 (define-public kermit
   (package
     (name "kermit")
-    (version "fb7714de")
+    (version "985e92d")
     (source
      (origin
        (method git-fetch)
        (uri (git-reference
              (url "https://github.com/ebreak/kermit.git")
-             (commit "fb7714de76d4290bcb2347f4c03b090413f0f3cb")))
+             (commit "985e92d07e6b4d43a1100fd31d5c4e83a5ba0a3f")))
        (file-name (git-file-name name version))
        (sha256
         (base32
-         "19xak2374j5pya39s4f5iisni4hk1rd99hfcamp1w3rrhk1zb4cs"))))
+         "07kk6264wx9lqs4cnkc5js9wwg1qin8ap6zza1kpb21n08igk7yr"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -39,6 +39,7 @@
               (let ((bin (string-append (assoc-ref outputs "out") "/bin")))
                 (mkdir-p bin)
                 (install-file "kr" bin)
+                (install-file "ks" bin)
                 #t))))))
     (home-page "https://github.com/ebreak/kermit")
     (synopsis "Tiny Kermit file-transfer utility")
