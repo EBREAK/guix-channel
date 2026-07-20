@@ -1,0 +1,71 @@
+From 40c15c34cbfecd81afccd45bad838beb0068353c Mon Sep 17 00:00:00 2001
+From: t <t@t>
+Date: Mon, 20 Jul 2026 07:25:50 +0800
+Subject: [PATCH] Fix file creation in single-user (-u) mode
+
+Two upstream paths broke mkdir/create when u9fs runs with -u in
+restricted environments (unprivileged, or a user namespace with a
+single-entry uid/gid map):
+
+- groupchange() tried setregid() before creation, which fails with
+  EINVAL when the gid is unmapped, making mkdir fail with
+  "Invalid argument".  In -u mode there is one identity and nothing
+  to switch to, so skip it like userchange().
+
+- The chown-after-create meant for the root + -u deployment deleted
+  the just-created file and returned an empty Rerror when the chown
+  failed (EPERM or unmapped uid).  It is now best-effort: failures
+  are logged and the file is kept.
+---
+ u9fs.c | 26 ++++++++++----------------
+ 1 file changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/u9fs.c b/u9fs.c
+index 7e9e8fd..ac99f67 100644
+--- a/u9fs.c
++++ b/u9fs.c
+@@ -1497,6 +1497,8 @@ userchange(User *u, char **ep)
+ int
+ groupchange(User *u, User *g, char **ep)
+ {
++	if(defaultuser)
++		return 0;	/* single-user mode: one identity, nothing to change */
+ 	if(g == nil)
+ 		return -1;
+ 	if(!useringroup(u, g)){
+@@ -1766,24 +1768,16 @@ usercreate(Fid *fid, char *elem, int omode, long perm, char **ep)
+ 	}
+ 
+ 	/*
+-	 * Change ownership if a default user is specified.
++	 * Change ownership if a default user is specified.  This is
++	 * best-effort: in restricted environments (unprivileged -u, or a
++	 * user namespace where the target uid is unmapped) the chown
++	 * fails, and the upstream error path deleted the just-created
++	 * file and returned an empty Rerror.  Keep the file instead.
+ 	 */
+ 	if(defaultuser)
+-	if((u = uname2user(defaultuser)) == nil
+-	|| chown(npath, u->id, -1) < 0){
+-		fprint(2, "chown after create on %s failed\n", npath);
+-		remove(npath);	/* race */
+-		free(npath);
+-		fid->path = opath;
+-		if(fid->fd >= 0){
+-			close(fid->fd);
+-			fid->fd = -1;
+-		}else{
+-			closedir(fid->dir);
+-			fid->dir = nil;
+-		}
+-		return -1;
+-	}
++	if((u = uname2user(defaultuser)) != nil
++	&& chown(npath, u->id, -1) < 0)
++		fprint(2, "chown after create on %s failed (ignored)\n", npath);
+ 
+ 	opath = fid->path;
+ 	fid->path = estrpath(opath, elem, 1);
+-- 
+2.53.0
+

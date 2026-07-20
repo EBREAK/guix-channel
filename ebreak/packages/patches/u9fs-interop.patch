@@ -1,0 +1,212 @@
+From b80bd1c3477964c297305484cfdfbe3109231e48 Mon Sep 17 00:00:00 2001
+From: t <t@t>
+Date: Mon, 20 Jul 2026 08:46:29 +0800
+Subject: [PATCH] Interoperability fixes from a 9front client review
+
+- Containment follow-up: Tcreate/walk/rename names are decoded by
+  defrog() (\\xx escapes, \\2f is '/'), so a crafted name could embed
+  '/' and '..' and escape the export root without ever passing
+  rootpath()/pathescapes().  Reject such names (badname()) in
+  usercreate, userwalk and the rwstat rename path, and reserve the
+  decoy name rootpath() redirects to.
+
+- pathescapes() fail-open: realpath(root) failing silently disabled
+  containment.  The export root is now resolved once in main() and
+  u9fs refuses to start if it cannot be resolved.
+
+- rwstat rename of a direct child of the export root ("mv /a /b")
+  failed with "whoops: can't happen in u9fs" (upstream strrchr
+  boundary bug).
+
+- Directory rewind now drops the cached cross-buffer dirent;
+  previously re-reading a directory after a partial read returned the
+  cached entry twice.
+
+- rattach now accepts uname "none" in single-user (-u) mode instead
+  of always rejecting it when authed==0; the uname is overridden by
+  the default user anyway.
+
+- wstat uid changes now fail with "permission denied" unless they
+  match the current owner; they were silently ignored before.
+
+- groupchange() sets a proper error string when the group is unknown
+  (its callers could otherwise use an uninitialized error pointer).
+
+- Silence a sign-compare warning in the msize bound check.
+---
+ u9fs.c | 75 +++++++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 67 insertions(+), 8 deletions(-)
+
+diff --git a/u9fs.c b/u9fs.c
+index ac99f67..b31d8c5 100644
+--- a/u9fs.c
++++ b/u9fs.c
+@@ -184,17 +184,20 @@ char isfrog[256]={
+ 	/*'x'*/	0, 0, 0, 0, 0, 0, 0, 1,	/*DEL*/
+ };
+ 
++char *defrog(char*);
++
++#define DECOYNAME ".u9fs-denied-nonexistent"
++
++static char rroot[PATH_MAX];	/* resolved export root, set in main() */
++
+ static int pathescapes(char *path);
+ 
+ static int
+ pathescapes(char *path)
+ {
+-	static char rroot[PATH_MAX];
+ 	char resolved[PATH_MAX], parent[PATH_MAX], *slash;
+ 	int n;
+ 
+-	if(realpath(root, rroot) == nil)
+-		return 0;
+ 	if(strcmp(rroot, "/") == 0)
+ 		return 0;	/* exporting /: nothing to contain */
+ 	n = strlen(rroot);
+@@ -223,11 +226,34 @@ rootpath(char *path)
+ 	snprint(buf, sizeof buf, "%s%s", root, path);
+ 	if(pathescapes(buf)){
+ 		errno = EACCES;
+-		snprint(buf, sizeof buf, "%s/.u9fs-denied-nonexistent", root);
++		snprint(buf, sizeof buf, "%s/%s", root, DECOYNAME);
+ 	}
+ 	return buf;
+ }
+ 
++/*
++ * Reject client-supplied names that could escape the export root
++ * lexically.  Names are decoded by defrog() (\xx escapes, including
++ * \2f for '/'), so the decoded form must be checked.  ".." is fine in
++ * walk elements (estrpath folds it inside the root) but not as a name
++ * to create or rename to.  The decoy name rootpath() redirects to is
++ * reserved in all cases.
++ */
++static int
++badname(char *name, int allowdotdot)
++{
++	char *d;
++	int bad;
++
++	d = defrog(name);
++	bad = d[0] == '\0'
++	    || strchr(d, '/') != nil
++	    || strcmp(d, DECOYNAME) == 0
++	    || (!allowdotdot && strcmp(d, "..") == 0);
++	free(d);
++	return bad;
++}
++
+ void
+ getfcallnew(int fd, Fcall *fc, int have)
+ {
+@@ -242,7 +268,7 @@ getfcallnew(int fd, Fcall *fc, int have)
+ 	len = GBIT32(rxbuf);
+ 	if(len <= BIT32SZ)
+ 		sysfatal("bogus message");
+-	if(len > msize)
++	if((ulong)len > msize)
+ 		sysfatal("message too large");
+ 
+ 	len -= BIT32SZ;
+@@ -464,7 +490,7 @@ rattach(Fcall *rx, Fcall *tx)
+ 		}
+ 	}
+ 
+-	if(strcmp(rx->uname, "none") == 0){
++	if(strcmp(rx->uname, "none") == 0 && !defaultuser){
+ 		if(authed == 0){
+ 			seterror(tx, Eauth);
+ 			return;
+@@ -811,6 +837,7 @@ rread(Fcall *rx, Fcall *tx)
+ 			rewinddir(fid->dir);
+ 			fid->diroffset = 0;
+ 			fid->direof = 0;
++			fid->dirent = nil;
+ 		}
+ 		if(fid->direof){
+ 			tx->count = 0;
+@@ -1005,6 +1032,21 @@ rwstat(Fcall *rx, Fcall *tx)
+ 	 * Same situation for d.mtime and d.length (although that last check
+ 	 * is admittedly superfluous, given the current lack of 128-bit machines).
+ 	 */
++	if(d.uid[0] != '\0'){
++		User *owner;
++
++		owner = uid2user(fid->st.st_uid);
++		if(owner != nil && strcmp(d.uid, owner->name) != 0){
++			seterror(tx, Eperm);
++			return;
++		}
++	}
++
++	if(d.name[0] && badname(d.name, 0)){
++		seterror(tx, Eperm);
++		return;
++	}
++
+ 	gid = (gid_t)-1;
+ 	if(d.gid[0] != '\0'){
+ 		User *g;
+@@ -1072,8 +1114,10 @@ rwstat(Fcall *rx, Fcall *tx)
+ 	if(d.name[0]){
+ 		old = fid->path;
+ 		dir = estrdup(fid->path);
+-		if((p = strrchr(dir, '/')) > dir)
++		if((p = strrchr(dir, '/')) != nil && p > dir)
+ 			*p = '\0';
++		else if(p == dir)
++			p[1] = '\0';	/* direct child of / */
+ 		else{
+ 			seterror(tx, "whoops: can't happen in u9fs");
+ 			return;
+@@ -1499,8 +1543,10 @@ groupchange(User *u, User *g, char **ep)
+ {
+ 	if(defaultuser)
+ 		return 0;	/* single-user mode: one identity, nothing to change */
+-	if(g == nil)
++	if(g == nil){
++		*ep = Eunknowngroup;
+ 		return -1;
++	}
+ 	if(!useringroup(u, g)){
+ 		if(chatty9p)
+ 			fprint(2, "%s not in group %s\n", u->name, g->name);
+@@ -1604,6 +1650,11 @@ userwalk(User *u, char **path, char *elem, Qid *qid, char **ep)
+ 	char *npath, *rpath;
+ 	struct stat st;
+ 
++	if(badname(elem, 1)){
++		*ep = Eperm;
++		return -1;
++	}
++
+ 	npath = estrpath(*path, elem, 1);
+ 	rpath = rootpath(npath);
+ 	if(stat(rpath, &st) < 0){
+@@ -1697,6 +1748,11 @@ usercreate(Fid *fid, char *elem, int omode, long perm, char **ep)
+ 	struct stat st, parent;
+ 	User *u;
+ 
++	if(badname(elem, 0)){
++		*ep = Eperm;
++		return -1;
++	}
++
+ 	rpath = rootpath(fid->path);
+ 	if(stat(rpath, &parent) < 0){
+ 		*ep = strerror(errno);
+@@ -1898,6 +1954,9 @@ main(int argc, char **argv)
+ 	if(argc == 1)
+ 		root = argv[0];
+ 
++	if(root != nil && realpath(root, rroot) == nil)
++		sysfatal("cannot resolve export root '%s': %s", root, strerror(errno));
++
+ 	none = uname2user("none");
+ 	if(none == nil)
+ 		none = uname2user("nobody");
+-- 
+2.53.0
+

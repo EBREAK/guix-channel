@@ -1,0 +1,321 @@
+From b2a2c2d05570a1ad648f617cf5b9241d8c42259d Mon Sep 17 00:00:00 2001
+From: t <t@t>
+Date: Sun, 19 Jul 2026 19:42:52 +0800
+Subject: [PATCH 1/2] Security hardening for serving untrusted 9P clients
+
+- Reject 9P messages larger than the negotiated msize.  The
+  client-declared message length was only lower-bound checked before
+  readn() filled an msize-sized heap buffer, allowing a pre-auth heap
+  overflow with client-controlled data.
+
+- Contain paths to the export root with realpath.  u9fs follows
+  symlinks, so a symlink inside the export root pointing at an
+  absolute path was served outside the export.  rootpath() is the
+  single choke point for all file system operations; paths whose
+  realpath(3) (or their parent's, for not-yet-existing files) escapes
+  the export root are redirected to a nonexistent name.
+
+- Disable special-file access via aname="device".
+---
+ u9fs.c | 43 ++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 38 insertions(+), 5 deletions(-)
+
+diff --git a/u9fs.c b/u9fs.c
+index ea0391c..e0591cc 100644
+--- a/u9fs.c
++++ b/u9fs.c
+@@ -183,6 +183,35 @@ char isfrog[256]={
+ 	/*'x'*/	0, 0, 0, 0, 0, 0, 0, 1,	/*DEL*/
+ };
+ 
++static int pathescapes(char *path);
++
++static int
++pathescapes(char *path)
++{
++	static char rroot[PATH_MAX];
++	char resolved[PATH_MAX], parent[PATH_MAX], *slash;
++	int n;
++
++	if(realpath(root, rroot) == nil)
++		return 0;
++	if(strcmp(rroot, "/") == 0)
++		return 0;	/* exporting /: nothing to contain */
++	n = strlen(rroot);
++	if(realpath(path, resolved) == nil){
++		/* Path does not exist (e.g. create target); check its parent. */
++		snprint(parent, sizeof parent, "%s", path);
++		slash = strrchr(parent, '/');
++		if(slash == nil || slash == parent)
++			strcpy(parent, "/");
++		else
++			*slash = '\0';
++		if(realpath(parent, resolved) == nil)
++			return 0;	/* the syscall will fail anyway */
++	}
++	return strncmp(resolved, rroot, n) != 0
++	    || (resolved[n] != '\0' && resolved[n] != '/');
++}
++
+ char*
+ rootpath(char *path)
+ {
+@@ -191,6 +220,10 @@ rootpath(char *path)
+ 	if(root == nil)
+ 		return path;
+ 	snprint(buf, sizeof buf, "%s%s", root, path);
++	if(pathescapes(buf)){
++		errno = EACCES;
++		snprint(buf, sizeof buf, "%s/.u9fs-denied-nonexistent", root);
++	}
+ 	return buf;
+ }
+ 
+@@ -208,6 +241,8 @@ getfcallnew(int fd, Fcall *fc, int have)
+ 	len = GBIT32(rxbuf);
+ 	if(len <= BIT32SZ)
+ 		sysfatal("bogus message");
++	if(len > msize)
++		sysfatal("message too large");
+ 
+ 	len -= BIT32SZ;
+ 	if(readn(fd, rxbuf+BIT32SZ, len) != len)
+@@ -407,11 +442,9 @@ rattach(Fcall *rx, Fcall *tx)
+ 		rx->aname = "";
+ 
+ 	if(strcmp(rx->aname, "device") == 0){
+-		if(connected && !devallowed){
+-			seterror(tx, Especial0);
+-			return;
+-		}
+-		devallowed = 1;
++		/* aname="device" special-file access disabled */
++		seterror(tx, Especial0);
++		return;
+ 	}else{
+ 		if(connected && devallowed){
+ 			seterror(tx, Especial1);
+-- 
+2.53.0
+
+
+From ece1772b68aed039f7d7b3fc62a67b0ec1ea48b4 Mon Sep 17 00:00:00 2001
+From: t <t@t>
+Date: Mon, 20 Jul 2026 13:37:42 +0800
+Subject: [PATCH 2/2] Security hardening, round 2: 9P1 and msize edge cases
+
+Found in a subsystem review of the legacy code paths:
+
+- getfcallold() trusted the 9P1 Twrite data length with no bound
+  (rxbuf is msize-sized): a pre-auth ~57 KiB controlled heap overflow.
+  Now rejects messages larger than msize.
+
+- rversion() let a client shrink msize below IOHDRSZ (or to 0 via the
+  9P1 Tnop), underflowing the ulong count checks in rread/rwrite and
+  turning them into heap overflows.  msize is now floored at 256 and
+  the 9P1 zero means "keep the default".
+
+- Tversion now resets the session (drops all fids), as 9P requires,
+  instead of letting a mid-session re-negotiation keep stale fids.
+
+- readstr() in the p9any handshake rejected no negative offsets,
+  leaking heap memory before authentication when -a p9any is used.
+
+- 9P1 fixed-width string fields (uname/aname/wname/name and the
+  embedded stat strings) were parsed as unterminated pointers into the
+  message buffer; downstream strlen() could read past the message.
+  They are now copied into bounded, NUL-terminated buffers.
+
+- rwstat now validates the embedded stat structure with statcheck()
+  before parsing it.
+
+- Fids are now capped at MAXFID 4096 to bound per-connection memory.
+---
+ authp9any.c |  2 +-
+ oldfcall.c  | 14 +++++++++-----
+ u9fs.c      | 48 +++++++++++++++++++++++++++++++++++++++++++++---
+ 3 files changed, 55 insertions(+), 9 deletions(-)
+
+diff --git a/authp9any.c b/authp9any.c
+index 2b784dc..3d251e3 100644
+--- a/authp9any.c
++++ b/authp9any.c
+@@ -379,7 +379,7 @@ p9anyattach(Fcall *rx, Fcall *tx)
+ static int
+ readstr(Fcall *rx, Fcall *tx, char *s, int len)
+ {
+-	if (rx->offset >= len)
++	if ((vlong)rx->offset < 0 || rx->offset >= len)
+ 		return 0;
+ 	tx->count = len - rx->offset;
+ 	if (tx->count > rx->count)
+diff --git a/oldfcall.c b/oldfcall.c
+index d9c8ca3..9c8842b 100644
+--- a/oldfcall.c
++++ b/oldfcall.c
+@@ -322,13 +322,18 @@ convD2Mold(Dir *f, uchar *ap, uint nap)
+ 					(p[2]<<16) | (p[3]<<24)) |\
+ 				((vlong)(p[4] | (p[5]<<8) |\
+ 					(p[6]<<16) | (p[7]<<24)) << 32); p += 8
+-#define	STRING(x,n)	f->x = (char*)p; p += n
++static char strbufs[4][29];
++static int nstrbufs;
++
++/* copy fixed-width fields into per-message buffers, always NUL-terminated */
++#define	STRING(x,n)	do { 	if(nstrbufs >= 4) 		return 0; 	memmove(strbufs[nstrbufs], p, n); 	strbufs[nstrbufs][n] = '\0'; 	f->x = strbufs[nstrbufs++]; 	p += (n); } while(0)
+ 
+ uint
+ convM2Sold(uchar *ap, uint nap, Fcall *f)
+ {
+ 	uchar *p, *q, *ep;
+ 
++	nstrbufs = 0;
+ 	p = ap;
+ 	ep = p + nap;
+ 
+@@ -369,8 +374,7 @@ convM2Sold(uchar *ap, uint nap, Fcall *f)
+ 		SHORT(fid);
+ 		f->newfid = f->fid;
+ 		f->nwname = 1;
+-		f->wname[0] = (char*)p;
+-		p += 28;
++		STRING(wname[0], 28);
+ 		break;
+ 
+ 	case oldTopen:
+@@ -388,8 +392,7 @@ convM2Sold(uchar *ap, uint nap, Fcall *f)
+ 		if(p+2+28+4+1 > ep)
+ 			return 0;
+ 		SHORT(fid);
+-		f->name = (char*)p;
+-		p += 28;
++		STRING(name, 28);
+ 		LONG(perm);
+ 		CHAR(mode);
+ 		break;
+@@ -504,6 +507,7 @@ convM2Dold(uchar *ap, uint nap, Dir *f, char *strs)
+ 	if(nap < 116)
+ 		return 0;
+ 
++	nstrbufs = 0;
+ 	p = (uchar*)ap;
+ 	STRING(name, 28);
+ 	STRING(uid, 28);
+diff --git a/u9fs.c b/u9fs.c
+index e0591cc..7e9e8fd 100644
+--- a/u9fs.c
++++ b/u9fs.c
+@@ -104,6 +104,7 @@ void	freefid(Fid*);
+ 
+ int	userchange(User*, char**);
+ int	userwalk(User*, char**, char*, Qid*, char**);
++void	resetfids(void);
+ int	useropen(Fid*, int, char**);
+ int	usercreate(Fid*, char*, int, long, char**);
+ int	userremove(Fid*, char**);
+@@ -270,6 +271,8 @@ getfcallold(int fd, Fcall *fc, int have)
+ 		sysfatal("couldn't read message");
+ 
+ 	n = iosize(rxbuf);
++	if((ulong)len + n > msize)
++		sysfatal("message too large");
+ 	if(readn(fd, rxbuf+len, n) != n)
+ 		sysfatal("couldn't read message");
+ 	len += n;
+@@ -413,7 +416,16 @@ serve(int rfd, int wfd)
+ void
+ rversion(Fcall *rx, Fcall *tx)
+ {
+-	if(msize > rx->msize)
++	/* 9P semantics: Tversion resets the session.  It also must not be
++	 * able to shrink msize below a sane floor: msize <= IOHDRSZ would
++	 * underflow the count checks in rread/rwrite (msize is ulong).
++	 * 9P1 reports msize 0; that means "keep the server default". */
++	resetfids();
++	if(rx->msize != 0 && rx->msize < 256){
++		seterror(tx, "msize too small");
++		return;
++	}
++	if(rx->msize != 0 && msize > rx->msize)
+ 		msize = rx->msize;
+ 	tx->msize = msize;
+ 	if(strncmp(rx->version, "9P", 2) != 0)
+@@ -767,7 +779,7 @@ rread(Fcall *rx, Fcall *tx)
+ 	Dir d;
+ 	struct stat st;
+ 
+-	if(rx->count > msize-IOHDRSZ){
++	if(msize < IOHDRSZ || rx->count > msize-IOHDRSZ){
+ 		seterror(tx, Etoolarge);
+ 		return;
+ 	}
+@@ -854,7 +866,7 @@ rwrite(Fcall *rx, Fcall *tx)
+ 	Fid *fid;
+ 	int n;
+ 
+-	if(rx->count > msize-IOHDRSZ){
++	if(msize < IOHDRSZ || rx->count > msize-IOHDRSZ){
+ 		seterror(tx, Etoolarge);
+ 		return;
+ 	}
+@@ -968,6 +980,13 @@ rwstat(Fcall *rx, Fcall *tx)
+ 	 * one works, we're screwed.  in such cases we leave things
+ 	 * half broken and return an error.  it's hardly perfect.
+ 	 */
++	if(!old9p){
++		extern int statcheck(uchar*, uint);
++		if(statcheck(rx->stat, rx->nstat) < 0){
++			seterror(tx, Ewstatbuffer);
++			return;
++		}
++	}
+ 	if((old9p ? convM2Dold : convM2D)(rx->stat, rx->nstat, &d, (char*)rx->stat) <= BIT16SZ){
+ 		seterror(tx, Ewstatbuffer);
+ 		return;
+@@ -1302,6 +1321,23 @@ lookupfid(int fid)
+ 	return nil;
+ }
+ 
++#define MAXFID 4096
++
++static int nfids;
++
++void
++resetfids(void)
++{
++	Fid *f, *next;
++
++	for(f = fidtab[0]; f; f = next){
++		next = f->next;
++		freefid(f);
++	}
++	fidtab[0] = nil;
++	nfids = 0;
++}
++
+ Fid*
+ newfid(int fid, char **ep)
+ {
+@@ -1311,6 +1347,11 @@ newfid(int fid, char **ep)
+ 		*ep = Efidactive;
+ 		return nil;
+ 	}
++	if(nfids >= MAXFID){
++		*ep = "too many fids";
++		return nil;
++	}
++	nfids++;
+ 
+ 	f = emalloc(sizeof(*f));
+ 	f->next = fidtab[fid%nelem(fidtab)];
+@@ -1384,6 +1425,7 @@ freefid(Fid *f)
+ 		fidtab[f->fid%nelem(fidtab)] = f->next;
+ 	if(f->next)
+ 		f->next->prev = f->prev;
++	nfids--;
+ 	if(f->dir)
+ 		closedir(f->dir);
+ 	if(f->fd)
+-- 
+2.53.0
+
