@@ -813,7 +813,7 @@
                     (display
                      (string-append
                       "# wchisp\n"
-                      "SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"4348\", "
+                      "SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"1a86\", "
                       "ATTRS{idProduct}==\"55e0\", MODE=\"0660\", "
                       "GROUP=\"dialout\"\n")))))
               #t)))))
