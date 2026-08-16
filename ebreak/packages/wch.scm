@@ -1,9 +1,11 @@
 (define-module (ebreak packages wch)
   #:use-module (gnu packages compression)
+  #:use-module (gnu packages wine)
   #:use-module (guix packages)
   #:use-module (guix download)
   #:use-module (guix gexp)
   #:use-module (guix build-system copy)
+  #:use-module (guix build-system gnu)
   #:use-module ((guix licenses) #:prefix license:))
 
 ;;; WCH download URLs are of the form
@@ -76,6 +78,69 @@ documentation) together with the CH32X035 datasheet (CH32X035DS0 V2.2)
 and reference manual (CH32X035RM V1.9).  The SDK tree is installed under
 @file{share/wch-ch32x035} and the manuals under
 @file{share/doc/wch-ch32x035-vendor}.")
+    (license
+     (license:non-copyleft "https://www.wch.cn/"
+       "This software and binaries may be used for microcontrollers
+manufactured by Nanjing Qinheng Microelectronics (WCH)."))))
+
+(define-public wch-risc8b-toolchain
+  (package
+    (name "wch-risc8b-toolchain")
+    (version "2025.10")
+    (source wch-ch32x035-evt-source)
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:tests? #f
+      #:strip-binaries? #f             ; Windows PE executables
+      #:phases
+      #~(modify-phases %standard-phases
+          (delete 'configure)
+          (delete 'build)
+          (replace 'install
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((out (assoc-ref outputs "out"))
+                     (lib (string-append out "/lib/wch-risc8b"))
+                     (doc (string-append out "/share/doc/wch-risc8b-toolchain"))
+                     (bin (string-append out "/bin"))
+                     (wine #$(file-append wine "/bin/wine"))
+                     (tools '(("wasm53b" . "WASM53B.EXE"))))
+                (mkdir-p lib)
+                (for-each (lambda (exe)
+                            (install-file exe lib))
+                          (find-files "EXAM/PIOC/Tool_Manual/Tool" "WASM53B\\.EXE$"))
+                (mkdir-p doc)
+                (for-each (lambda (pdf)
+                            (install-file pdf doc))
+                          (find-files "EXAM/PIOC/Tool_Manual/Manual" "\\.PDF$"))
+                (mkdir-p bin)
+                (for-each
+                 (lambda (tool)
+                   (let ((wrapper (string-append bin "/" (car tool)))
+                         (exe (string-append lib "/" (cdr tool))))
+                     (call-with-output-file wrapper
+                       (lambda (port)
+                         (format port "#!/bin/sh
+# Run the original Windows tool through Wine.  Set WINE to use a
+# different Wine binary, WINEDEBUG to adjust Wine diagnostics.
+: \"${WINEDEBUG:=-all}\"
+export WINEDEBUG
+exec \"${WINE:-~a}\" \"~a\" \"$@\"
+" wine exe)))
+                     (chmod wrapper #o555)))
+                 tools)))))))
+    (native-inputs (list unzip))
+    (inputs (list wine))
+    (home-page "https://www.wch-ic.com/products/CH32X035.html")
+    (synopsis "WCH-RISC8B assembler for the CH32X035 PIOC")
+    (description
+      "The CH32X035 PIOC (Programmable Protocol I/O Controller) is driven
+by a small WCH-RISC8B 8-bit RISC core.  This package provides the vendor
+toolchain for that core, taken from the CH32X035 EVT package: the WASM
+assembler (WASM53B).  It is a 32-bit Windows console executable; the
+installed @command{wasm53b} wrapper runs it through Wine.  The RISC8B
+instruction set and PIOC manuals are installed under
+@file{share/doc/wch-risc8b-toolchain}.")
     (license
      (license:non-copyleft "https://www.wch.cn/"
        "This software and binaries may be used for microcontrollers
