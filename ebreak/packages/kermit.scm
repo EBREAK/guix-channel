@@ -6,9 +6,11 @@
   #:use-module (gnu packages ncurses)
   #:use-module (guix packages)
   #:use-module (guix gexp)
+  #:use-module (guix download)
   #:use-module (guix git-download)
   #:use-module (guix utils)
   #:use-module (guix build-system gnu)
+  #:use-module (guix build-system copy)
   #:use-module ((guix licenses) #:prefix license:))
 
 (define-public kermit
@@ -140,3 +142,62 @@ memory and storage are limited.")
 that provides file transfer, terminal connection, scripting, and character-set
 translation.  This package builds the command-line Kermit client for Linux.")
     (license license:bsd-3)))
+
+(define-public kermit-protocol-manual
+  (package
+    (name "kermit-protocol-manual")
+    (version "6")
+    (source
+     (origin
+       (method url-fetch)
+       (uri "https://www.kermitproject.org/kproto.pdf")
+       (file-name "kproto.pdf")
+       (sha256
+        (base32
+         "19yrqrvkb17n8h5cww1mxrg8h9n52b044vhkc086j515k17p3nb5"))))
+    (build-system copy-build-system)
+    (arguments
+     (list
+      #:install-plan
+      #~'(("kproto.pdf" "share/doc/kermit-protocol-manual/"))))
+    (home-page "https://www.kermitproject.org/")
+    (synopsis "Kermit protocol manual, sixth edition")
+    (description
+      "The Kermit Protocol Manual by Frank da Cruz describes the Kermit
+file-transfer protocol, including the long-packet and sliding-window
+extensions.  This is the sixth edition (June 1986) published by the
+Columbia University Center for Computing Activities.")
+    (license
+     (license:non-copyleft "https://www.kermitproject.org/kproto.pdf"
+       "Permission is granted to any individual or institution to copy or
+use this document, except for explicitly commercial purposes."))))
+
+(define-public kermit-book
+  (package
+    (name "kermit-book")
+    (version "2016")
+    (source
+     (origin
+       (method url-fetch)
+       (uri "https://www.kermitproject.org/onlinebooks/kermitbook.pdf")
+       (file-name "kermitbook.pdf")
+       (sha256
+        (base32
+         "0gizcgcf03yrp3ivl745hjmscz98s7v91y12qzvdms98sqg1qv9r"))))
+    (build-system copy-build-system)
+    (arguments
+     (list
+      #:install-plan
+      #~'(("kermitbook.pdf" "share/doc/kermit-book/"))))
+    (home-page "https://www.kermitproject.org/")
+    (synopsis "Kermit, a File Transfer Protocol book")
+    (description
+      "Kermit, a File Transfer Protocol by Frank da Cruz is the definitive
+book about the Kermit file-transfer protocol, originally published by
+Digital Press in 1987 and in print until 2001.  This PDF edition was
+produced in February 2016 from the original Scribe manuscript and is
+distributed online by the Kermit Project.")
+    (license
+     (license:non-copyleft "https://www.kermitproject.org/onlinebooks/kermitbook.pdf"
+       "Distributed online for free by the Kermit Project; original
+copyright 1987 Digital Press."))))
