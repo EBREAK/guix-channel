@@ -54,7 +54,22 @@
 \tif(tmpdir == nil)
 \t\ttmpdir = \"/var/tmp\";
 \tstrcpy(tmp, tmpdir);
-\tstrcat(tmp, \"/9vx.pages.XXXXXX\");"))))
+\tstrcat(tmp, \"/9vx.pages.XXXXXX\");"))
+              ;; 9front userland creates lock files with the DMEXCL
+              ;; (and DMTMP) permission bits set; the Plan 9 4th
+              ;; edition devfs-posix rejects them, breaking e.g.
+              ;; webcookies.  Accept the bits (exclusivity is not
+              ;; enforced on the host-backed file system).
+              (substitute* "src/9vx/devfs-posix.c"
+                (("~\\(DMDIR\\|0777\\)")
+                 "~(DMDIR|DMEXCL|0x40000000|0777)"))
+              ;; Guard against cclose(nil) in the namec create-error
+              ;; path, which 9front userland can provoke.
+              (substitute* "src/9vx/a/chan.c"
+                (("/\\* create failed \\*/\n\tcclose\\(cnew\\);")
+                 "/* create failed */
+\tif(cnew)
+\t\tcclose(cnew);"))))
           (replace 'build
             (lambda* (#:key make-flags #:allow-other-keys)
               (apply invoke "make" "-C" "src" make-flags)))
@@ -86,7 +101,11 @@
                      (("/usr/local/bin/9vx")
                       (string-append bin "/9vx"))
                      (("/usr/local/bin/9vxp")
-                      (string-append bin "/9vxp")))
+                      (string-append bin "/9vxp"))
+                     ;; Invoke 9vx(9vxp) by absolute path instead of
+                     ;; relying on PATH.
+                     (("exec 9vx ") (string-append "exec " bin "/9vx "))
+                     (("exec 9vxp ") (string-append "exec " bin "/9vxp ")))
                    (chmod (string-append "bin/" script) #o555)
                    (install-file (string-append "bin/" script) bin))
                  '("9vxc" "9vxp" "acmevx" "rcvx" "tap"))
