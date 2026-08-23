@@ -16,10 +16,10 @@
      (method git-fetch)
      (uri (git-reference
            (url "https://github.com/ebreak/dwl-ebreak")
-           (commit "7cee5076c00a1a0b85091540bc4a00cee659af9d")))
+           (commit "48af6feeb4c2e4b83183b19ce162e958f4773456")))
      (file-name (git-file-name name version))
      (sha256
       (base32
-       "127m36gdf8b8fvc2d81lgafjnkf0glrwqrzlfja8d3aqlkl9vygx"))))
+       "11icyj658w02qqijzf56ldcgx00mqwqdf0didvshjspqb98vjria"))))
    (inputs
     (list wlroots-0.19))))
