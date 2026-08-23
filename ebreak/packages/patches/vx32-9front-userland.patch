@@ -1,0 +1,55 @@
+9front userland compatibility for 9vx.
+
+Three changes, needed to run a 9front root file system under
+"9vx -r":
+
+* 9front creates files with the DMEXCL and DMTMP permission bits set
+  (e.g. webcookies' jar lock); the Plan 9 4th edition kernel does not
+  know DMTMP and devfs-posix rejects both bits in create, breaking
+  such programs.  Accept the bits (exclusive use is not enforced on
+  the host-backed file system anyway).
+
+* Guard cclose(cnew) in the namec() create-error path.  When the
+  create attempt fails, error() unwinds through gotolabel(), which
+  restores the callee-saved registers to their values from before
+  waserror() — including the one holding cnew, i.e. nil (GCC's own
+  control-flow analysis proves this and even constant-folds the
+  argument).  The unconditional cclose(nil) then panics the kernel
+  with a segmentation fault.  Every failed create on a mount point
+  hits this: 9front's rc creates /dev/wdir after each cd (for the rio
+  window label), which fails on the #c mount without MCREATE, so any
+  "cd" in a booted 9front crashed 9vx.
+
+--- a/src/9vx/a/lib.h
++++ b/src/9vx/a/lib.h
+@@ -72,6 +72,7 @@
+ #define DMAPPEND	0x40000000	/* mode bit for append only files */
+ #define DMEXCL		0x20000000	/* mode bit for exclusive use files */
+ #define DMMOUNT		0x10000000	/* mode bit for mounted channel */
++#define DMTMP		0x04000000	/* mode bit for don't-archive file (9front) */
+ #define DMREAD		0x4		/* mode bit for read permission */
+ #define DMWRITE		0x2		/* mode bit for write permission */
+ #define DMEXEC		0x1		/* mode bit for execute permission */
+--- a/src/9vx/devfs-posix.c
++++ b/src/9vx/devfs-posix.c
+@@ -413,7 +413,7 @@ fscreate(Chan *c, char *name, int mode, ulong perm)
+ 	if(mode & ~(OTRUNC|ORCLOSE|3))
+ 		error(Ebadarg);
+ 
+-	if(perm & ~(DMDIR|0777))
++	if(perm & ~(DMDIR|DMEXCL|DMTMP|0777))
+ 		error(Ebadarg);
+ 
+ 	path0 = fspath(c, nil);
+--- a/src/9vx/a/chan.c
++++ b/src/9vx/a/chan.c
+@@ -1629,7 +1629,8 @@ namec(char *aname, int amode, ulong omode, ulong perm)
+ 			break;
+ 		}
+ 
+-		/* create failed */
++		/* create failed */
++		if(cnew)
+ 		cclose(cnew);
+ 		if(m)
+ 			putmhead(m);

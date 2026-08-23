@@ -1,0 +1,24 @@
+Honor $TMPDIR for the 9vx page file.
+
+9vx backs its "physical memory" with a file created in /var/tmp.
+Honor $TMPDIR so that it also works in sandboxes without /var/tmp.
+
+--- a/src/9vx/mmu.c
++++ b/src/9vx/mmu.c
+@@ -104,9 +104,15 @@
+ void
+ mmuinit(void)
+ {
+-	char tmp[] = "/var/tmp/9vx.pages.XXXXXX";
++	char *tmpdir;
++	char tmp[256];
+ 	void *v;
+ 	int i;
+ 	
++	tmpdir = getenv("TMPDIR");
++	if(tmpdir == nil)
++		tmpdir = "/var/tmp";
++	snprint(tmp, sizeof tmp, "%s/9vx.pages.XXXXXX", tmpdir);
++
+ 	if((pagefile = mkstemp(tmp)) < 0)
+ 		panic("mkstemp: %r");

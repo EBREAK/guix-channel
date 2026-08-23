@@ -5,6 +5,7 @@
   #:use-module (guix git-download)
   #:use-module (guix utils)
   #:use-module (guix build-system gnu)
+  #:use-module (gnu packages)
   #:use-module (gnu packages perl)
   #:use-module (gnu packages xorg)
   #:use-module ((guix licenses) #:prefix license:))
@@ -29,7 +30,10 @@
              %commit ".tar.gz"))
        (sha256
         (base32
-         "19l0c1xw8f0cpfc482i9wkzf80ba6s3y72h246knyfzl9f2mwayf"))))
+         "19l0c1xw8f0cpfc482i9wkzf80ba6s3y72h246knyfzl9f2mwayf"))
+       (patches (search-patches
+                 "ebreak/packages/patches/vx32-honor-tmpdir.patch"
+                 "ebreak/packages/patches/vx32-9front-userland.patch"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -41,35 +45,6 @@
       #:phases
       #~(modify-phases %standard-phases
           (delete 'configure)
-          (add-after 'unpack 'patch-pagefile-tmpdir
-            ;; 9vx backs its physical memory with a file created in
-            ;; /var/tmp; honor $TMPDIR instead so that it also works in
-            ;; sandboxes without /var/tmp.
-            (lambda _
-              (substitute* "src/9vx/mmu.c"
-                (("\tchar tmp\\[\\] = \"/var/tmp/9vx.pages.XXXXXX\";")
-                 "\tchar *tmpdir = getenv(\"TMPDIR\");
-\tchar tmp[256];
-
-\tif(tmpdir == nil)
-\t\ttmpdir = \"/var/tmp\";
-\tstrcpy(tmp, tmpdir);
-\tstrcat(tmp, \"/9vx.pages.XXXXXX\");"))
-              ;; 9front userland creates lock files with the DMEXCL
-              ;; (and DMTMP) permission bits set; the Plan 9 4th
-              ;; edition devfs-posix rejects them, breaking e.g.
-              ;; webcookies.  Accept the bits (exclusivity is not
-              ;; enforced on the host-backed file system).
-              (substitute* "src/9vx/devfs-posix.c"
-                (("~\\(DMDIR\\|0777\\)")
-                 "~(DMDIR|DMEXCL|0x40000000|0777)"))
-              ;; Guard against cclose(nil) in the namec create-error
-              ;; path, which 9front userland can provoke.
-              (substitute* "src/9vx/a/chan.c"
-                (("/\\* create failed \\*/\n\tcclose\\(cnew\\);")
-                 "/* create failed */
-\tif(cnew)
-\t\tcclose(cnew);"))))
           (replace 'build
             (lambda* (#:key make-flags #:allow-other-keys)
               (apply invoke "make" "-C" "src" make-flags)))
