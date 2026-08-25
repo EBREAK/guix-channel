@@ -401,8 +401,20 @@ itself is built separately and supplied through the final toolchain union."
                 ;; installation lib/gcc/<target>/<version>/ directory, not in
                 ;; the target sysroot.  The source-built GCC package cannot be
                 ;; modified after it is built, so install small wrappers for
-                ;; gcc/g++ that rewrite the relative specs reference to the
+                ;; gcc/g++ that rewrite relative specs references (e.g.
+                ;; --specs=picolibc.specs, --specs=nosys.specs) to the
                 ;; absolute path in this toolchain union.
+                ;;
+                ;; The wrappers also make the toolchain self-contained:
+                ;; gcc-16 does not honour CROSS_C_INCLUDE_PATH /
+                ;; CROSS_LIBRARY_PATH (no cross-environment-variables patch
+                ;; is applied to it upstream), and the C library lives in a
+                ;; separate store item.  Inject the target include and
+                ;; library dirs here: -B gets the multilib subdirectory
+                ;; (e.g. thumb/v6-m/nofp) appended by the driver and covers
+                ;; both libraries and startfiles (crt0.o), while
+                ;; -idirafter keeps the include_next chain (gcc's own
+                ;; stdint.h -> newlib's stdint.h) working.
                 (for-each (lambda (name)
                             (let ((wrapper (string-append bin-dir "/"
                                                           #$target "-" name))
@@ -415,18 +427,32 @@ itself is built separately and supplied through the final toolchain union."
                                   (format port "#!~a~%"
                                           #$(file-append bash "/bin/sh"))
                                   (format port "set -e~%")
-                                  (format port "specs_path=\"~a\"~%"
-                                          (string-append specs-dir
-                                                         "/picolibc.specs"))
+                                  (format port "target_dir=\"~a\"~%"
+                                          (string-append out "/" #$target))
                                   (format port "args=()~%")
+                                  (format port
+                                   "args+=(\"-B$target_dir/lib/\")~%")
+                                  (format port
+                                   "args+=(\"-idirafter\" \"$target_dir/include/c++\"~%")
+                                  (format port
+                                   "        \"-idirafter\" \"$target_dir/include/c++/~a\"~%"
+                                          #$target)
+                                  (format port
+                                   "        \"-idirafter\" \"$target_dir/include\")~%")
                                   (format port "for arg in \"$@\"; do~%")
+                                  (format port "  case \"$arg\" in~%")
+                                  (format port "    --specs=*)~%")
                                   (format port
-                                   "  if [ \"$arg\" = \"--specs=picolibc.specs\" ]; then~%")
+                                          "      name=\"${arg#--specs=}\"~%")
                                   (format port
-                                   "    args+=(\"--specs=$specs_path\")~%")
-                                  (format port "  else~%")
-                                  (format port "    args+=(\"$arg\")~%")
-                                  (format port "  fi~%")
+                                   "      if [ -f \"$target_dir/lib/$name\" ]; then~%")
+                                  (format port
+                                   "        args+=(\"--specs=$target_dir/lib/$name\")~%")
+                                  (format port "      else~%")
+                                  (format port "        args+=(\"$arg\")~%")
+                                  (format port "      fi ;;~%")
+                                  (format port "    *) args+=(\"$arg\") ;;~%")
+                                  (format port "  esac~%")
                                   (format port "done~%")
                                   (format port "exec ~a \"${args[@]}\"~%" real)))
                               (chmod wrapper #o555)))
@@ -458,3 +484,19 @@ itself is built separately and supplied through the final toolchain union."
                          #:multilib-generator %riscv-zephyr-multilib-generator
                          #:with-arch "rv64imac"
                          #:with-abi "lp64"))
+
+;; Same source-built GCC/newlib stack, but with the conventional GNU triplet
+;; so that pico-sdk and other bare-metal projects find arm-none-eabi-gcc by
+;; default.  The rmprofile multilib set covers Cortex-M0+/M3/M4/M7 (and the
+;; R profiles); RP2350 (Cortex-M33) is included as well.
+(define-public arm-none-eabi-toolchain
+  (package
+    (inherit (make-zephyr-toolchain "arm-none-eabi"
+                                    #:multilib-list "rmprofile"))
+    (synopsis "Complete GCC toolchain for ARM Cortex-R/M bare-metal development")
+    (description
+     "This package provides a complete source-built GCC toolchain for ARM
+Cortex-R/M bare-metal development with the standard @code{arm-none-eabi}
+triplet.  It includes Binutils, GCC, newlib, and libstdc++, with the
+@code{rmprofile} multilib set covering Cortex-M0+/M3/M4/M7/M33 and Cortex-R
+targets.")))
