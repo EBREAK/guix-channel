@@ -19,7 +19,7 @@
 
 ;;; Raspberry Pi RP2040/RP2350 (Pico) development packages.
 ;;;
-;;;   pico-sdk            - Pico SDK source tree, exports PICO_SDK_PATH
+;;;   pico-sdk            - Pico SDK source tree
 ;;;   pioasm              - PIO assembler (host build of pico-sdk's tool)
 ;;;   picotool            - Pico binary inspection / UF2 conversion tool
 ;;;   debugprobe-firmware - Raspberry Pi Debug Probe firmware, built for the
@@ -78,17 +78,11 @@
                 (delete-file-recursively tinyusb-dir))
               (copy-recursively #$%tinyusb-origin tinyusb-dir))
             #t))))
-    (native-search-paths
-     (list (search-path-specification
-            (variable "PICO_SDK_PATH")
-            (files '("share/pico-sdk")))))
     (home-page "https://github.com/raspberrypi/pico-sdk")
     (synopsis "Raspberry Pi Pico SDK source tree (RP2040/RP2350)")
     (description
      "This package provides the Raspberry Pi Pico SDK source tree for
-RP2040 and RP2350 development, with the pinned TinyUSB submodule included.
-It exports @code{PICO_SDK_PATH} so that Pico projects find it
-automatically.")
+RP2040 and RP2350 development, with the pinned TinyUSB submodule included.")
     (license license:bsd-3)))
 
 (define-public pioasm
