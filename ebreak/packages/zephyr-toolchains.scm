@@ -182,18 +182,7 @@ itself is built separately and supplied through the final toolchain union."
                                        (string-prefix?
                                         "--with-multilib-generator=" flag))))
                             #$flags)))))
-      (native-search-paths
-       (list (search-path-specification
-              (variable "CROSS_C_INCLUDE_PATH")
-              (files (list (string-append target "/include"))))
-             (search-path-specification
-              (variable "CROSS_CPLUS_INCLUDE_PATH")
-              (files (list (string-append target "/include/c++")
-                           (string-append target "/include/c++/" target)
-                           (string-append target "/include"))))
-             (search-path-specification
-              (variable "CROSS_LIBRARY_PATH")
-              (files (list (string-append target "/lib")))))))))
+      (native-search-paths '()))))
 
 (define (zephyr-newlib target xgcc)
   "Newlib C library built for TARGET using XGCC."
@@ -324,10 +313,7 @@ itself is built separately and supplied through the final toolchain union."
                     ;; libstdc++ sources are compiled with -nostdinc++, which
                     ;; ignores CPLUS_INCLUDE_PATH but still honours CPATH.
                     (setenv "CPATH" newlib-inc)
-                    (setenv "CROSS_C_INCLUDE_PATH" newlib-inc)
-                    (setenv "CROSS_CPLUS_INCLUDE_PATH" newlib-inc)
                     (setenv "LIBRARY_PATH" newlib-lib)
-                    (setenv "CROSS_LIBRARY_PATH" newlib-lib)
                     #t)))))))
       (native-inputs `(("newlib" ,newlib)
                        ("xgcc" ,xgcc)
@@ -406,15 +392,12 @@ itself is built separately and supplied through the final toolchain union."
                 ;; absolute path in this toolchain union.
                 ;;
                 ;; The wrappers also make the toolchain self-contained:
-                ;; gcc-16 does not honour CROSS_C_INCLUDE_PATH /
-                ;; CROSS_LIBRARY_PATH (no cross-environment-variables patch
-                ;; is applied to it upstream), and the C library lives in a
-                ;; separate store item.  Inject the target include and
-                ;; library dirs here: -B gets the multilib subdirectory
-                ;; (e.g. thumb/v6-m/nofp) appended by the driver and covers
-                ;; both libraries and startfiles (crt0.o), while
-                ;; -idirafter keeps the include_next chain (gcc's own
-                ;; stdint.h -> newlib's stdint.h) working.
+                ;; the C library lives in a separate store item, so inject
+                ;; the target include and library dirs here.  -B gets the
+                ;; multilib subdirectory (e.g. thumb/v6-m/nofp) appended by
+                ;; the driver and covers both libraries and startfiles
+                ;; (crt0.o), while -idirafter keeps the include_next chain
+                ;; (gcc's own stdint.h -> newlib's stdint.h) working.
                 (for-each (lambda (name)
                             (let ((wrapper (string-append bin-dir "/"
                                                           #$target "-" name))

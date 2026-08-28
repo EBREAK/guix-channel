@@ -368,6 +368,9 @@ It is used as the C library of the bare-metal Xtensa ESP-IDF toolchain.")
            (lambda* (#:key inputs #:allow-other-keys)
              (let ((libc (assoc-ref inputs "libc"))
                    (target #$target))
+               ;; Build-time only: the cross compiler is patched to honour
+               ;; CROSS_* paths while keeping target headers out of the host
+               ;; compiler's search path.
                (setenv "CROSS_C_INCLUDE_PATH"
                        (string-append libc "/" target "/include"))
                (setenv "CROSS_CPLUS_INCLUDE_PATH"
@@ -465,6 +468,10 @@ It is used as the C library of the bare-metal Xtensa ESP-IDF toolchain.")
       (inherit base)
       (name "gcc-cross-xtensa-esp-elf")
       (arguments (gcc-cross-xtensa-esp-elf-arguments base %target))
+      ;; Do not export CROSS_* search-path variables into the user's shell;
+      ;; the toolchain meta-package uses wrapper scripts and specs files to
+      ;; locate libraries and headers.
+      (native-search-paths '())
       (native-inputs
        (modify-inputs (package-native-inputs base)
          (delete "xkernel-headers")
@@ -502,20 +509,25 @@ It is used as the C library of the bare-metal Xtensa ESP-IDF toolchain.")
                                          "/bin/sed")))
 
             (define (gcc-cross-lib-paths lib-root target)
-              "Return the CROSS_LIBRARY_PATH directories for GCC's runtime
-and target C library.  These live in the 'lib' output of the cross compiler."
+              "Return the library search directories for GCC's runtime and
+ target C library.  These live in the 'lib' output of the cross compiler."
               (string-append lib-root "/lib/gcc/" target "/" gcc-version ":"
                              lib-root "/" target "/lib"))
             (define cross-library-path
               (string-append out "/" #$%target "/lib"
                              ":" (gcc-cross-lib-paths gcc-lib #$%target)))
+            (define cross-library-flags
+              (string-join (map (lambda (dir)
+                                  (string-append "-B" dir))
+                                (string-split cross-library-path #\:))
+                           " "))
 
             ;; Picolibc's installed specs file uses %:getenv(GCC_EXEC_PREFIX ...)
             ;; to build relocatable include/library paths.  With Guix's split
             ;; "out"/"lib" GCC outputs and the multilib layout this produces
             ;; malformed paths for C++ and the startup files, so we generate a
             ;; fixed specs file under <out>/<target>/lib and put that directory
-            ;; first on CROSS_LIBRARY_PATH so GCC finds it before the original.
+            ;; first on the library search path so GCC finds it before the original.
             (define (write-picolibc-specs file target gcc-lib gcc-version newlib-include)
               "Write a picolibc.specs with absolute Guix store paths.
 NEWLIB-INCLUDE is added after the picolibc include directory because ESP-IDF
@@ -598,16 +610,15 @@ still includes some legacy newlib headers (e.g. reent.h)."
                   ;; The cross compiler was built with a placeholder prefix; tell
                   ;; GCC where its subprograms (cc1, collect2, ...) live.
                   (format #t "export GCC_EXEC_PREFIX=~a~%" gcc-exec-prefix)
-                  ;; GCC's patched library search relies on CROSS_LIBRARY_PATH
-                  ;; because the runtime libraries are in a separate "lib"
-                  ;; output that the compiler cannot locate from argv[0].
-                  (format #t "export CROSS_LIBRARY_PATH=~a~%" cross-library-path)
+                  ;; The runtime libraries are in a separate "lib" output that
+                  ;; the compiler cannot locate from argv[0]; pass their
+                  ;; directories explicitly via -B prefixes.
                   (format #t "if printf '%s\\n' \"$@\" | ~a -qx -- '--version'; then~%"
                           grep-cmd)
-                  (format #t "  ~a \"$@\" | ~a '1{/(crosstool-NG/!s/$/ (crosstool-NG esp-~a)/}'~%"
-                          gcc-real sed-cmd #$%esp-gcc-version)
+                  (format #t "  ~a ~a \"$@\" | ~a '1{/(crosstool-NG/!s/$/ (crosstool-NG esp-~a)/}'~%"
+                          gcc-real cross-library-flags sed-cmd #$%esp-gcc-version)
                   (format #t "else~%")
-                  (format #t "  exec ~a \"$@\"~%" gcc-real)
+                  (format #t "  exec ~a ~a \"$@\"~%" gcc-real cross-library-flags)
                   (format #t "fi~%")))
               (chmod gcc-wrapper #o555))
 
@@ -669,9 +680,9 @@ still includes some legacy newlib headers (e.g. reent.h)."
                                   ;; GCC_EXEC_PREFIX is set by the base
                                   ;; xtensa-esp-elf-gcc wrapper, so there is no
                                   ;; need to duplicate it here; only preserve
-                                  ;; the patched library search path.
-                                  (format #t "export CROSS_LIBRARY_PATH=~a~%" cross-library-path)
-                                  (format #t "exec \"$REAL\" -mdynconfig=xtensa_~a.so \"$@\"~%" chip))))
+                                  ;; the library search path via -B prefixes.
+                                  (format #t "exec \"$REAL\" ~a -mdynconfig=xtensa_~a.so \"$@\"~%"
+                                          cross-library-flags chip))))
                             (chmod wrapper #o555))))
                       '("esp32" "esp32s2" "esp32s3" "esp8266"))))))
              (find-files (string-append out "/bin") ".*" #:stat lstat))

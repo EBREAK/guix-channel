@@ -2,6 +2,7 @@
   #:use-module (gnu packages)
   #:use-module (gnu packages base)
   #:use-module (gnu packages cross-base)
+  #:use-module (gnu packages compiler-tools)   ;flex
   #:use-module (gnu packages gcc)
   #:use-module (gnu packages build-tools)    ;meson, ninja
   #:use-module (gnu packages pkg-config)
@@ -147,7 +148,32 @@ used as the C library of a bare-metal RISC-V GCC toolchain.")
                              (string-prefix? "--with-abi=" flag)))
                        #$flags)))
     ((#:make-flags flags)
-     #~(list))))
+     #~(list))
+    ((#:phases phases)
+     #~(modify-phases #$phases
+         (add-after 'unpack 'pre-generate-gengtype-lex
+           (lambda _
+             ;; GNU GCC 16 tarball may not ship the flex-generated
+             ;; gcc/gengtype-lex.cc, and the parallel build races on its
+             ;; generation.  Create it up-front.
+             (let ((generated "gcc/gengtype-lex.cc")
+                   (tmp "gcc/gengtype-lex.cc.tmp"))
+               (invoke "flex" "-o" generated "gcc/gengtype-lex.l")
+               (call-with-output-file tmp
+                 (lambda (out)
+                   (display "#ifdef HOST_GENERATOR_FILE\n" out)
+                   (display "#include \"config.h\"\n" out)
+                   (display "#else\n" out)
+                   (display "#include \"bconfig.h\"\n" out)
+                   (display "#endif\n" out)
+                   (display "#define FLEX_SCANNER\n" out)
+                   (display "#include \"system.h\"\n" out)
+                   (display "#undef FLEX_SCANNER\n" out)
+                   (call-with-input-file generated
+                     (lambda (in)
+                       (dump-port in out)))))
+               (rename-file tmp generated))
+             #t))))))
 
 (define-public gcc-cross-sans-libc-riscv32-qingke
   (let ((base (cross-gcc %target
@@ -158,10 +184,13 @@ used as the C library of a bare-metal RISC-V GCC toolchain.")
       (inherit base)
       (name "gcc-cross-sans-libc-riscv32-qingke")
       (arguments (gcc-cross-sans-libc-riscv32-qingke-arguments base %target))
+      ;; Do not export CROSS_* search-path variables into the user's shell.
+      (native-search-paths '())
       (native-inputs
        (modify-inputs (package-native-inputs base)
          (delete "xkernel-headers")
          (delete "libc:static")
+         (prepend flex)
          (prepend python-minimal)
          (prepend which))))))
 
@@ -197,10 +226,36 @@ used as the C library of a bare-metal RISC-V GCC toolchain.")
                             "/" #$target "/lib")))
     ((#:phases phases)
      #~(modify-phases #$phases
+         (add-after 'unpack 'pre-generate-gengtype-lex
+           (lambda _
+             ;; GNU GCC 16 tarball may not ship the flex-generated
+             ;; gcc/gengtype-lex.cc, and the parallel build races on its
+             ;; generation.  Create it up-front.
+             (let ((generated "gcc/gengtype-lex.cc")
+                   (tmp "gcc/gengtype-lex.cc.tmp"))
+               (invoke "flex" "-o" generated "gcc/gengtype-lex.l")
+               (call-with-output-file tmp
+                 (lambda (out)
+                   (display "#ifdef HOST_GENERATOR_FILE\n" out)
+                   (display "#include \"config.h\"\n" out)
+                   (display "#else\n" out)
+                   (display "#include \"bconfig.h\"\n" out)
+                   (display "#endif\n" out)
+                   (display "#define FLEX_SCANNER\n" out)
+                   (display "#include \"system.h\"\n" out)
+                   (display "#undef FLEX_SCANNER\n" out)
+                   (call-with-input-file generated
+                     (lambda (in)
+                       (dump-port in out)))))
+               (rename-file tmp generated))
+             #t))
          (replace 'set-cross-path
            (lambda* (#:key inputs #:allow-other-keys)
              (let ((libc (assoc-ref inputs "libc"))
                    (target #$target))
+               ;; Build-time only: the cross compiler is patched to honour
+               ;; CROSS_* paths while keeping target headers out of the host
+               ;; compiler's search path.
                (setenv "CROSS_C_INCLUDE_PATH"
                        (string-append libc "/" target "/include"))
                (setenv "CROSS_CPLUS_INCLUDE_PATH"
@@ -261,10 +316,13 @@ used as the C library of a bare-metal RISC-V GCC toolchain.")
     (package
       (inherit base)
       (arguments (gcc-cross-riscv32-qingke-arguments base %target))
+      ;; Do not export CROSS_* search-path variables into the user's shell.
+      (native-search-paths '())
       (native-inputs
        (modify-inputs (package-native-inputs base)
          (delete "xkernel-headers")
          (delete "libc:static")
+         (prepend flex)
          (prepend python-minimal)
          (prepend which))))))
 
