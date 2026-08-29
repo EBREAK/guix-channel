@@ -352,6 +352,15 @@ itself is built separately and supplied through the final toolchain union."
                    (bin-dir (string-append out "/bin")))
               (union-build out
                            (map cdr %build-inputs))
+              ;; Binutils installs a number of internal libraries and docs
+              ;; that are not needed by end users of the cross toolchain and
+              ;; collide with clang-toolchain / gdb-multiarch when multiple
+              ;; toolchains share a profile.  Remove them after the union.
+              (for-each delete-file
+                        (append
+                         (find-files (string-append out "/lib") "\\.la$")
+                         (find-files (string-append out "/share/info")
+                                     "^(bfd|ctf-spec|sframe-spec)\\.info")))
               ;; Zephyr's RP2040/RP2350 second stage bootloader passes
               ;; --specs=picolibc.specs when CONFIG_PICOLIBC is selected.
               ;; Provide a minimal specs file so that assembly-only
@@ -441,9 +450,16 @@ itself is built separately and supplied through the final toolchain union."
                               (chmod wrapper #o555)))
                           (list "gcc" "g++" "c++"))
                 #t)))))
-      (propagated-inputs `(("binutils" ,(zephyr-cross-binutils target))
-                           ("gcc" ,xgcc)
-                           ("newlib" ,newlib)
+      ;; Inputs are required by the builder above (union-build + wrappers).
+      (inputs `(("binutils" ,(zephyr-cross-binutils target))
+                ("gcc" ,xgcc)
+                ("newlib" ,newlib)
+                ("libstdc++" ,libstdcxx)))
+      ;; Do not propagate binutils/gcc: their binaries and libraries are
+      ;; already merged into this toolchain by union-build.  Propagating
+      ;; them would expose the same files in the user profile and cause
+      ;; collisions with other toolchains or with clang-toolchain.
+      (propagated-inputs `(("newlib" ,newlib)
                            ("libstdc++" ,libstdcxx)))
       (synopsis (string-append "Complete GCC toolchain for Zephyr (" target
                                ")"))
