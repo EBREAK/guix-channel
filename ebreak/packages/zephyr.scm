@@ -256,10 +256,9 @@ if(NOT EXISTS ${cmake_modules_file})")
                              #$(gexp-input cmake "out")
                              #$(gexp-input ninja "out")
                              #$(gexp-input gperf "out"))))))
-    (propagated-inputs `(("arm-zephyr-eabi-toolchain" ,arm-zephyr-eabi-toolchain)
-                         ("aarch64-zephyr-elf-toolchain" ,aarch64-zephyr-elf-toolchain)
-                         ("riscv64-zephyr-elf-toolchain" ,riscv64-zephyr-elf-toolchain)
-                         ("openocd" ,openocd)
+    ;; The toolchains are already unioned into this SDK package; do not
+    ;; propagate them again to avoid collisions in the user profile.
+    (propagated-inputs `(("openocd" ,openocd)
                          ("qemu" ,qemu)
                          ("dtc" ,dtc)
                          ("cmake" ,cmake)
@@ -558,7 +557,9 @@ verification that the toolchains and HAL modules are functional.")
                          ("zephyr-modules-hal-wch" ,zephyr-modules-hal-wch)
                          ("zephyr-sdk" ,zephyr-sdk)
                          ("zephyr-python-deps" ,zephyr-python-deps)
-                         ("git-minimal" ,git-minimal)
+                         ;; Use full git to avoid colliding with git-minimal
+                         ;; propagated by other packages in the same profile.
+                         ("git" ,git)
                          ("nss-certs" ,nss-certs)))
     ;; Export ZEPHYR_MODULES listing every module in the profile union.
     (native-search-paths

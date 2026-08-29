@@ -182,18 +182,7 @@ itself is built separately and supplied through the final toolchain union."
                                        (string-prefix?
                                         "--with-multilib-generator=" flag))))
                             #$flags)))))
-      (native-search-paths
-       (list (search-path-specification
-              (variable "CROSS_C_INCLUDE_PATH")
-              (files (list (string-append target "/include"))))
-             (search-path-specification
-              (variable "CROSS_CPLUS_INCLUDE_PATH")
-              (files (list (string-append target "/include/c++")
-                           (string-append target "/include/c++/" target)
-                           (string-append target "/include"))))
-             (search-path-specification
-              (variable "CROSS_LIBRARY_PATH")
-              (files (list (string-append target "/lib")))))))))
+      (native-search-paths '()))))
 
 (define (zephyr-newlib target xgcc)
   "Newlib C library built for TARGET using XGCC."
@@ -324,10 +313,7 @@ itself is built separately and supplied through the final toolchain union."
                     ;; libstdc++ sources are compiled with -nostdinc++, which
                     ;; ignores CPLUS_INCLUDE_PATH but still honours CPATH.
                     (setenv "CPATH" newlib-inc)
-                    (setenv "CROSS_C_INCLUDE_PATH" newlib-inc)
-                    (setenv "CROSS_CPLUS_INCLUDE_PATH" newlib-inc)
                     (setenv "LIBRARY_PATH" newlib-lib)
-                    (setenv "CROSS_LIBRARY_PATH" newlib-lib)
                     #t)))))))
       (native-inputs `(("newlib" ,newlib)
                        ("xgcc" ,xgcc)
@@ -366,6 +352,15 @@ itself is built separately and supplied through the final toolchain union."
                    (bin-dir (string-append out "/bin")))
               (union-build out
                            (map cdr %build-inputs))
+              ;; Binutils installs a number of internal libraries and docs
+              ;; that are not needed by end users of the cross toolchain and
+              ;; collide with clang-toolchain / gdb-multiarch when multiple
+              ;; toolchains share a profile.  Remove them after the union.
+              (for-each delete-file
+                        (append
+                         (find-files (string-append out "/lib") "\\.la$")
+                         (find-files (string-append out "/share/info")
+                                     "^(bfd|ctf-spec|sframe-spec)\\.info")))
               ;; Zephyr's RP2040/RP2350 second stage bootloader passes
               ;; --specs=picolibc.specs when CONFIG_PICOLIBC is selected.
               ;; Provide a minimal specs file so that assembly-only
@@ -406,15 +401,12 @@ itself is built separately and supplied through the final toolchain union."
                 ;; absolute path in this toolchain union.
                 ;;
                 ;; The wrappers also make the toolchain self-contained:
-                ;; gcc-16 does not honour CROSS_C_INCLUDE_PATH /
-                ;; CROSS_LIBRARY_PATH (no cross-environment-variables patch
-                ;; is applied to it upstream), and the C library lives in a
-                ;; separate store item.  Inject the target include and
-                ;; library dirs here: -B gets the multilib subdirectory
-                ;; (e.g. thumb/v6-m/nofp) appended by the driver and covers
-                ;; both libraries and startfiles (crt0.o), while
-                ;; -idirafter keeps the include_next chain (gcc's own
-                ;; stdint.h -> newlib's stdint.h) working.
+                ;; the C library lives in a separate store item, so inject
+                ;; the target include and library dirs here.  -B gets the
+                ;; multilib subdirectory (e.g. thumb/v6-m/nofp) appended by
+                ;; the driver and covers both libraries and startfiles
+                ;; (crt0.o), while -idirafter keeps the include_next chain
+                ;; (gcc's own stdint.h -> newlib's stdint.h) working.
                 (for-each (lambda (name)
                             (let ((wrapper (string-append bin-dir "/"
                                                           #$target "-" name))
@@ -458,9 +450,16 @@ itself is built separately and supplied through the final toolchain union."
                               (chmod wrapper #o555)))
                           (list "gcc" "g++" "c++"))
                 #t)))))
-      (propagated-inputs `(("binutils" ,(zephyr-cross-binutils target))
-                           ("gcc" ,xgcc)
-                           ("newlib" ,newlib)
+      ;; Inputs are required by the builder above (union-build + wrappers).
+      (inputs `(("binutils" ,(zephyr-cross-binutils target))
+                ("gcc" ,xgcc)
+                ("newlib" ,newlib)
+                ("libstdc++" ,libstdcxx)))
+      ;; Do not propagate binutils/gcc: their binaries and libraries are
+      ;; already merged into this toolchain by union-build.  Propagating
+      ;; them would expose the same files in the user profile and cause
+      ;; collisions with other toolchains or with clang-toolchain.
+      (propagated-inputs `(("newlib" ,newlib)
                            ("libstdc++" ,libstdcxx)))
       (synopsis (string-append "Complete GCC toolchain for Zephyr (" target
                                ")"))
