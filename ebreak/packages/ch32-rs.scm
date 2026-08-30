@@ -817,7 +817,9 @@
                       "ATTRS{idProduct}==\"55e0\", MODE=\"0660\", "
                       "GROUP=\"dialout\"\n")))))
               #t)))))
-    (inputs (cargo-inputs 'wchisp #:module '(ebreak packages ch32-rs)))
+    (native-inputs (list pkg-config))
+    (inputs (cons* eudev
+                   (cargo-inputs 'wchisp #:module '(ebreak packages ch32-rs))))
     (home-page "https://github.com/ch32-rs/wchisp.git")
     (synopsis "Command-line implementation of WCHISPTool")
     (description

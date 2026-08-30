@@ -83,11 +83,19 @@
                   (format port "#!/bin/sh~%exec ~a -s ~a \"$@\"~%"
                           real-binary sharedir)))
               (chmod (string-append bindir "/openocd-mrs") #o555)
+              ;; Install OpenOCD's udev rules so USB debug probes are
+              ;; accessible to non-root users.
+              (let ((rules-dir (string-append out "/lib/udev/rules.d"))
+                    (rules-src (string-append (assoc-ref %build-inputs "openocd")
+                                              "/lib/udev/rules.d/60-openocd.rules")))
+                (mkdir-p rules-dir)
+                (copy-file rules-src (string-append rules-dir "/60-openocd-mrs.rules")))
               #t)))))
     (native-inputs
      `(("patchelf" ,patchelf)
        ("tar" ,tar)
-       ("xz" ,xz)))
+       ("xz" ,xz)
+       ("openocd" ,openocd)))
     (inputs
      `(("libc" ,glibc)
        ("gcc:lib" ,gcc-14 "lib")
@@ -105,4 +113,5 @@
       the upstream @code{openocd} package, scripts are installed under
       @file{share/openocd-mrs/scripts} and the @command{openocd-mrs} command is
       a wrapper that points OpenOCD to that directory.")
-    (license license:unlicense)))
+    (supported-systems '("x86_64-linux"))
+    (license license:gpl2+)))

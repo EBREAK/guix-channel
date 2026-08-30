@@ -22,6 +22,8 @@
     (package
       (inherit base)
       (name "gcc-cross-sh-casio-elf")
+      ;; Do not export CROSS_* search-path variables into the user's shell.
+      (search-paths '())
       (arguments
        (substitute-keyword-arguments (package-arguments base)
          ((#:configure-flags flags)
@@ -94,7 +96,7 @@
                              (assoc-ref %build-inputs name))
                            '("binutils" "gcc")))
             #t))))
-    (propagated-inputs
+    (native-inputs
      `(("binutils" ,(cross-binutils %target))
        ("gcc" ,gcc-cross-sh-casio-elf)))
     (home-page "https://github.com/ebreak/casio-calculator-dev")

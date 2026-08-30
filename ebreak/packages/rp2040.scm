@@ -141,7 +141,46 @@ host binary instead of building pioasm again.")
       #:configure-flags
       #~(list (string-append "-DPICO_SDK_PATH="
                              #$(this-package-native-input "pico-sdk")
-                             "/share/pico-sdk"))))
+                             "/share/pico-sdk"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'install 'install-udev-rules
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((rules (string-append (assoc-ref outputs "out")
+                                          "/lib/udev/rules.d")))
+                (mkdir-p rules)
+                (with-output-to-file (string-append rules "/60-picotool.rules")
+                  (lambda _
+                    (display
+                     (string-append
+                      "# Copy this file to /etc/udev/rules.d/\n"
+                      "# You can reload the udev rules with \"udevadm control --reload\"\n"
+                      "\n"
+                      "SUBSYSTEM==\"usb\", \\\n"
+                      "    ATTRS{idVendor}==\"2e8a\", \\\n"
+                      "    ATTRS{idProduct}==\"0003\", \\\n"
+                      "    TAG+=\"uaccess\", \\\n"
+                      "    MODE=\"660\", \\\n"
+                      "    GROUP=\"plugdev\"\n"
+                      "SUBSYSTEM==\"usb\", \\\n"
+                      "    ATTRS{idVendor}==\"2e8a\", \\\n"
+                      "    ATTRS{idProduct}==\"0009\", \\\n"
+                      "    TAG+=\"uaccess\", \\\n"
+                      "    MODE=\"660\", \\\n"
+                      "    GROUP=\"plugdev\"\n"
+                      "SUBSYSTEM==\"usb\", \\\n"
+                      "    ATTRS{idVendor}==\"2e8a\", \\\n"
+                      "    ATTRS{idProduct}==\"000a\", \\\n"
+                      "    TAG+=\"uaccess\", \\\n"
+                      "    MODE=\"660\", \\\n"
+                      "    GROUP=\"plugdev\"\n"
+                      "SUBSYSTEM==\"usb\", \\\n"
+                      "    ATTRS{idVendor}==\"2e8a\", \\\n"
+                      "    ATTRS{idProduct}==\"000f\", \\\n"
+                      "    TAG+=\"uaccess\", \\\n"
+                      "    MODE=\"660\", \\\n"
+                      "    GROUP=\"plugdev\"\n"))))
+              #t))))))
     ;; picotool only reads pico-sdk headers and version files at configure
     ;; time; the embedded RP2350 blobs it ships are used precompiled
     ;; (USE_PRECOMPILED defaults to true), so no cross toolchain is needed.

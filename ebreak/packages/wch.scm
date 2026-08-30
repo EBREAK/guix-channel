@@ -12,6 +12,14 @@
 ;;; https://file.wch.cn/download/file?id=N; the real file name is only
 ;;; revealed via the Content-Disposition header.
 
+(define %wch-vendor-license
+  (license:license
+   "WCH vendor license"
+   "https://www.wch.cn/"
+   "This software and binaries may be used for microcontrollers
+manufactured by Nanjing Qinheng Microelectronics (WCH).  This is a
+field-of-use restriction, not a free software license."))
+
 (define wch-ch32x035-datasheet
   (origin
     (method url-fetch)
@@ -78,10 +86,7 @@ documentation) together with the CH32X035 datasheet (CH32X035DS0 V2.2)
 and reference manual (CH32X035RM V1.9).  The SDK tree is installed under
 @file{share/wch-ch32x035} and the manuals under
 @file{share/doc/wch-ch32x035-vendor}.")
-    (license
-     (license:non-copyleft "https://www.wch.cn/"
-       "This software and binaries may be used for microcontrollers
-manufactured by Nanjing Qinheng Microelectronics (WCH)."))))
+    (license %wch-vendor-license)))
 
 (define-public wch-risc8b-toolchain
   (package
@@ -141,7 +146,4 @@ assembler (WASM53B).  It is a 32-bit Windows console executable; the
 installed @command{wasm53b} wrapper runs it through Wine.  The RISC8B
 instruction set and PIOC manuals are installed under
 @file{share/doc/wch-risc8b-toolchain}.")
-    (license
-     (license:non-copyleft "https://www.wch.cn/"
-       "This software and binaries may be used for microcontrollers
-manufactured by Nanjing Qinheng Microelectronics (WCH)."))))
+    (license %wch-vendor-license)))

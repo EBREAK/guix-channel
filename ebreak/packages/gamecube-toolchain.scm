@@ -87,6 +87,8 @@ targets the big-endian powerpc-gamecube-elf target used by the Nintendo GameCube
     (package
       (inherit base)
       (name "gcc-cross-gamecube")
+      ;; Do not export CROSS_* search-path variables into the user's shell.
+      (search-paths '())
       (inputs
        `(,@(package-inputs base)
          ("picolibc" ,picolibc-gamecube)))
@@ -171,7 +173,7 @@ targets the big-endian powerpc-gamecube-elf target used by the Nintendo GameCube
                              (assoc-ref %build-inputs name))
                            '("binutils" "gcc" "picolibc")))
             #t))))
-    (propagated-inputs
+    (native-inputs
      `(("binutils" ,(cross-binutils %target))
        ("gcc" ,gcc-cross-gamecube)
        ("picolibc" ,picolibc-gamecube)))
